@@ -12,6 +12,16 @@ This package provides a focused OpenTelemetry tracing integration for the [Vayu 
 - **Standalone Package**: Keeps the core Vayu framework lean while providing full observability
 - **Compatible with all OpenTelemetry backends**: Works with Jaeger, Zipkin, and any OpenTelemetry collector
 
+## Screenshots
+
+View your distributed traces in Jaeger UI or any other OpenTelemetry-compatible visualization tool:
+
+![Trace Overview](screenshots/1.png)
+
+Detailed view of spans with timing and attributes:
+
+![Detailed Span View](screenshots/2.png)
+
 ## Installation
 
 To use the OpenTelemetry integration with Vayu, first install both packages:
