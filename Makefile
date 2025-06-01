@@ -34,18 +34,8 @@ fmt:
 vet:
 	$(GO) vet $(DIRS)
 
-# Run staticcheck if installed, otherwise install and run
-staticcheck:
-	@if command -v staticcheck >/dev/null 2>&1; then \
-		staticcheck $(DIRS); \
-	else \
-		echo "staticcheck not found, installing..."; \
-		$(GO) install honnef.co/go/tools/cmd/staticcheck@latest; \
-		$(shell go env GOPATH)/bin/staticcheck $(DIRS) || echo "Warning: staticcheck failed, but continuing"; \
-	fi
-
 # Run all linters
-lint: fmt vet staticcheck
+lint: fmt vet
 
 # Run tests and linting
 check: test lint

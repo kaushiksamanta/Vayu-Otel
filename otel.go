@@ -24,16 +24,12 @@ type SetupOptions struct {
 
 	// Config is the OpenTelemetry configuration
 	Config Config
-
-	// EnableTracing determines whether to enable distributed tracing
-	EnableTracing bool
 }
 
 // DefaultSetupOptions returns default setup options
 func DefaultSetupOptions() SetupOptions {
 	return SetupOptions{
-		Config:        DefaultConfig(),
-		EnableTracing: true,
+		Config: DefaultConfig(),
 	}
 }
 
@@ -78,23 +74,9 @@ func NewNoopTracer() trace.Tracer {
 	return otel.GetTracerProvider().Tracer("noop")
 }
 
-// SpanFromContext retrieves the current span from the context
-func SpanFromContext(ctx context.Context) trace.Span {
-	return trace.SpanFromContext(ctx)
-}
-
 // StartSpan starts a new span with the given name and options
 func StartSpan(ctx context.Context, tracer trace.Tracer, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return tracer.Start(ctx, name, opts...)
-}
-
-// StartSpanWithTracer starts a new span with a tracer of the specified name
-func StartSpanWithTracer(ctx context.Context, provider *Provider, tracerName string, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	if provider == nil || provider.TracerProvider == nil {
-		return ctx, trace.SpanFromContext(ctx)
-	}
-	tracer := provider.TracerProvider.Tracer(tracerName)
-	return tracer.Start(ctx, spanName, opts...)
 }
 
 // AddSpanAttributes adds attributes to the given span

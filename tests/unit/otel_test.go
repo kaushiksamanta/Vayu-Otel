@@ -10,9 +10,8 @@ import (
 	vayuOtel "github.com/kaushiksamanta/vayu-otel"
 	"github.com/kaushiksamanta/vayu-otel/tests"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
-
-// Use the common SetupTestTracer from the tests package
 
 func TestDefaultSetupOptions(t *testing.T) {
 	options := vayuOtel.DefaultSetupOptions()
@@ -20,10 +19,6 @@ func TestDefaultSetupOptions(t *testing.T) {
 	// Verify default values
 	if options.Config.ServiceName != "vayu-service" {
 		t.Errorf("Expected ServiceName to be 'vayu-service', got '%s'", options.Config.ServiceName)
-	}
-
-	if !options.EnableTracing {
-		t.Error("Expected EnableTracing to be true")
 	}
 }
 
@@ -60,28 +55,6 @@ func TestSetup(t *testing.T) {
 	}
 }
 
-func TestDirectSpanAttributes(t *testing.T) {
-	// Create a span and add it to context
-	provider, err := tests.SetupTestTracer()
-	if err != nil {
-		t.Fatalf("Failed to setup tracer: %v", err)
-	}
-	defer provider.Shutdown(context.Background())
-
-	// Get a tracer with a specific name
-	tracer := provider.Tracer("custom-test-tracer")
-	_, span := tracer.Start(context.Background(), "test-span")
-
-	// Add attributes directly to span
-	span.SetAttributes(
-		attribute.String("test.key", "value"),
-		attribute.Int("test.count", 42),
-	)
-
-	// No direct way to verify the attributes were added
-	// Just make sure it doesn't panic
-}
-
 func TestGetTracer(t *testing.T) {
 	// Create a valid app and integration
 	app := vayu.New()
@@ -108,99 +81,116 @@ func TestGetTracer(t *testing.T) {
 	}
 }
 
-func TestDirectSpanOperations(t *testing.T) {
-	// Create a span directly
+func TestStartSpan(t *testing.T) {
+	// Test the StartSpan helper function
+	ctx := context.Background()
 	provider, err := tests.SetupTestTracer()
 	if err != nil {
 		t.Fatalf("Failed to setup tracer: %v", err)
 	}
 	defer provider.Shutdown(context.Background())
 
-	tracer := provider.Tracer("span-operations-tracer")
-
-	// Create test function with error capture
-	testFunction := func(ctx context.Context, name string, expectError bool) error {
-		// Create child span for the function
-		_, span := tracer.Start(ctx, name)
-		defer span.End()
-
-		// Simulate work
-		time.Sleep(5 * time.Millisecond)
-
-		// Handle error case
-		if expectError {
-			err := errors.New("test error")
-			// Record error in span
-			span.RecordError(err)
-			span.SetStatus(1, err.Error())
-			return err
-		}
-
-		return nil
+	tracer := provider.Tracer("test-tracer")
+	
+	// Use the StartSpan helper function
+	newCtx, span := vayuOtel.StartSpan(ctx, tracer, "test-span")
+	if span == nil {
+		t.Fatal("Expected span to be non-nil")
 	}
-
-	// Test successful function execution
-	ctx := context.Background()
-	err = testFunction(ctx, "successful-operation", false)
-	if err != nil {
-		t.Errorf("Expected nil error, got %v", err)
+	
+	// Verify the context contains the span
+	contextSpan := trace.SpanFromContext(newCtx)
+	if contextSpan != span {
+		t.Error("Expected span from context to match created span")
 	}
-
-	// Test with error
-	errResult := testFunction(ctx, "error-operation", true)
-	if errResult == nil {
-		t.Error("Expected error, got nil")
-	}
+	
+	// End the span
+	span.End()
 }
 
-func TestDirectSpanInHandler(t *testing.T) {
-	// Create tracer
+func TestAddSpanAttributes(t *testing.T) {
+	// Test the AddSpanAttributes helper function
 	provider, err := tests.SetupTestTracer()
 	if err != nil {
 		t.Fatalf("Failed to setup tracer: %v", err)
 	}
 	defer provider.Shutdown(context.Background())
 
-	// Get a tracer with a specific name for the handler
-	handlerTracer := provider.Tracer("handler-tracer")
+	tracer := provider.Tracer("attributes-tracer")
+	_, span := tracer.Start(context.Background(), "attributes-span")
+	defer span.End()
 
-	// Create a request context
-	reqCtx := context.Background()
+	// Use the AddSpanAttributes helper function
+	vayuOtel.AddSpanAttributes(span, 
+		attribute.String("test.key", "value"),
+		attribute.Int("test.count", 42),
+		attribute.Bool("test.enabled", true),
+	)
 
-	// Handler function that creates a span
-	handlerCalled := false
-	handleRequest := func() {
-		// Create a span directly in the handler
-		ctx, span := handlerTracer.Start(reqCtx, "handler-span")
-		defer span.End()
+	// No direct way to verify attributes in the testing API
+	// This test just ensures the function doesn't panic
+}
 
-		// Add attributes
-		span.SetAttributes(
-			attribute.String("handler.name", "test-handler"),
-			attribute.String("http.method", "GET"),
-			attribute.String("http.path", "/test"),
-		)
-
-		// Record event
-		span.AddEvent("handler.executed")
-
-		// Create a child span for database operation with a different tracer name
-		dbTracer := provider.Tracer("db-tracer")
-		_, dbSpan := dbTracer.Start(ctx, "database-operation")
-		dbSpan.SetAttributes(attribute.String("db.operation", "query"))
-		time.Sleep(1 * time.Millisecond) // Simulate work
-		dbSpan.End()
-
-		handlerCalled = true
+func TestAddSpanEvent(t *testing.T) {
+	// Test the AddSpanEvent helper function
+	provider, err := tests.SetupTestTracer()
+	if err != nil {
+		t.Fatalf("Failed to setup tracer: %v", err)
 	}
+	defer provider.Shutdown(context.Background())
 
-	// Execute handler
-	handleRequest()
+	tracer := provider.Tracer("events-tracer")
+	_, span := tracer.Start(context.Background(), "events-span")
+	defer span.End()
 
-	// Verify handler was called
-	if !handlerCalled {
-		t.Error("Expected handler to be called")
+	// Use the AddSpanEvent helper function
+	vayuOtel.AddSpanEvent(span, "test-event", 
+		attribute.String("event.type", "test"),
+		attribute.Int("event.count", 1),
+	)
+
+	// No direct way to verify events in the testing API
+	// This test just ensures the function doesn't panic
+}
+
+func TestEndSpan(t *testing.T) {
+	// Test the EndSpan helper function
+	provider, err := tests.SetupTestTracer()
+	if err != nil {
+		t.Fatalf("Failed to setup tracer: %v", err)
 	}
+	defer provider.Shutdown(context.Background())
+
+	tracer := provider.Tracer("end-span-tracer")
+	_, span := tracer.Start(context.Background(), "end-span")
+	
+	// Use the EndSpan helper function
+	vayuOtel.EndSpan(span)
+
+	// No direct way to verify span ended in the testing API
+	// This test just ensures the function doesn't panic
+}
+
+func TestRecordSpanError(t *testing.T) {
+	// Test the RecordSpanError helper function
+	provider, err := tests.SetupTestTracer()
+	if err != nil {
+		t.Fatalf("Failed to setup tracer: %v", err)
+	}
+	defer provider.Shutdown(context.Background())
+
+	tracer := provider.Tracer("error-tracer")
+	_, span := tracer.Start(context.Background(), "error-span")
+	defer span.End()
+
+	// Create a test error
+	testErr := errors.New("test error")
+	
+	// Use the RecordSpanError helper function
+	vayuOtel.RecordSpanError(span, testErr)
+
+	// No direct way to verify error was recorded in the testing API
+	// This test just ensures the function doesn't panic
 }
 
 func TestMultipleTracerNames(t *testing.T) {
