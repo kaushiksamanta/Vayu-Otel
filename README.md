@@ -42,7 +42,7 @@ import (
     "time"
 
     "github.com/kaushiksamanta/vayu"
-    vayuotel "github.com/kaushiksamanta/vayu-otel"
+    vayuOtel "github.com/kaushiksamanta/vayu-otel"
 )
 
 func main() {
@@ -50,12 +50,12 @@ func main() {
   app := vayu.New()
 
   // Set up OpenTelemetry integration with default options
-  options := vayuotel.DefaultSetupOptions()
+  options := vayuOtel.DefaultSetupOptions()
   options.App = app
   options.Config.ServiceName = "my-service"
 
   // Initialize OpenTelemetry
-  otel, err := vayuotel.Setup(options)
+  otel, err := vayuOtel.Setup(options)
   if err != nil {
     log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
   }
@@ -92,7 +92,7 @@ func main() {
 ### Provider Configuration
 
 ```go
-config := vayuotel.DefaultConfig()
+config := vayuOtel.DefaultConfig()
 config.ServiceName = "my-service"           // Required: Name of your service
 config.ServiceVersion = "1.2.3"             // Optional: Version of your service
 config.Environment = "production"           // Optional: Deployment environment
@@ -104,13 +104,13 @@ config.Insecure = true                      // Optional: Use insecure connection
 ### Complete Setup Example
 
 ```go
-options := vayuotel.DefaultSetupOptions()
+options := vayuOtel.DefaultSetupOptions()
 options.App = app
 options.Config = config                  // From above
 
 options.EnableTracing = true             // Enable distributed tracing
 
-otel, err := vayuotel.Setup(options)
+otel, err := vayuOtel.Setup(options)
 if err != nil {
   log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
 }
@@ -119,29 +119,6 @@ if err != nil {
 ## Type-Safe Features
 
 Vayu-OTel leverages Vayu's type-safe context methods to provide enhanced integration:
-
-### Type-Safe Context Storage
-
-```go
-// The integration stores spans and trace information using Vayu's type-safe methods
-app.GET("/users/:id", func(c *vayu.Context, next vayu.NextFunc) {
-  userID := c.Param("id")
-  
-  // Get trace ID as a string (using type-safe GetString)
-  traceID := vayuotel.GetTraceID(c)
-  
-  // Log with trace context
-  log.Printf("Processing request for user %s (trace: %s)", userID, traceID)
-  
-  // Processing...
-  
-  // Return JSON with trace information included
-  vayuotel.JSONWithTracing(c, vayu.StatusOK, map[string]interface{}{
-    "id": userID,
-    "name": "User " + userID,
-  })
-})
-```
 
 ### Creating Spans with Dynamic Tracer Names
 
@@ -174,72 +151,12 @@ app.GET("/users/:id", func(c *vayu.Context, next vayu.NextFunc) {
 })
 ```
 
-### Adding Attributes to Spans
-
-```go
-app.GET("/products", func(c *vayu.Context, next vayu.NextFunc) {
-  // Add custom attributes to current request span
-  vayuotel.AddRequestAttributes(c,
-    attribute.String("product.category", c.Query("category")),
-    attribute.Int("product.limit", 50),
-  )
-    
-  c.JSONString(vayu.StatusOK, `{"products":[]}`)
-})
-```
-
-### Error Handling
-
-```go
-app.GET("/error", func(c *vayu.Context, next vayu.NextFunc) {
-  err := someOperation()
-  if err != nil {
-    // Record error in span
-    vayuotel.AddError(c, err)
-    c.JSONMap(vayu.StatusInternalServerError, map[string]string{"error": err.Error()})
-    return
-  }
-    
-  c.JSONString(vayu.StatusOK, `{"status":"ok"}`)
-})
-```
-
-### Wrapping Handlers for Custom Spans
-
-```go
-app.GET("/orders/:id", vayuotel.WrapHandler("get_order", func(c *vayu.Context, next vayu.NextFunc) {
-  // This handler is wrapped in a span named "get_order"
-  orderID := c.Param("id")
-  // ... handler code
-  c.JSONMap(vayu.StatusOK, map[string]string{"id": orderID})
-}))
-```
-
-### Tracing Specific Functions
-
-```go
-app.POST("/checkout", func(c *vayu.Context, next vayu.NextFunc) {
-  // Trace a specific function and propagate any errors
-  err := vayuotel.TraceFunction(c, "payment.process", func() error {
-    // Payment processing logic that returns an error on failure
-    return processPayment(c.GetValue("payment_details"))
-  })
-    
-  if err != nil {
-    c.JSONMap(vayu.StatusBadRequest, map[string]string{"error": err.Error()})
-    return
-  }
-    
-  c.JSONString(vayu.StatusOK, `{"status":"success"}`)
-})
-```
-
 ## Working with OpenTelemetry Exporters
 
 ### Jaeger
 
 ```go
-config := vayuotel.DefaultConfig()
+config := vayuOtel.DefaultConfig()
 config.ServiceName = "my-service"
 config.OTLPEndpoint = "jaeger:4317" // Jaeger OTLP endpoint
 config.Insecure = true
@@ -250,7 +167,7 @@ config.Insecure = true
 ### Zipkin
 
 ```go
-config := vayuotel.DefaultConfig()
+config := vayuOtel.DefaultConfig()
 config.ServiceName = "my-service"
 config.OTLPEndpoint = "zipkin:4317" // Zipkin OTLP endpoint
 config.Insecure = true
@@ -261,27 +178,7 @@ config.Insecure = true
 ### Custom OTLP Endpoint
 
 ```go
-config := vayuotel.DefaultConfig()
-config.ServiceName = "my-service"
-config.OTLPEndpoint = "collector.example.com:4317"
-config.Insecure = false // Use TLS
-config.Headers = map[string]string{
-    "Authorization": "Bearer token",
-}
-
-```go
-config := vayuotel.DefaultConfig()
-config.ServiceName = "my-service"
-config.OTLPEndpoint = "zipkin:4317" // Zipkin OTLP endpoint
-config.Insecure = true
-
-// Set up integration...
-```
-
-### Custom OTLP Endpoint
-
-```go
-config := vayuotel.DefaultConfig()
+config := vayuOtel.DefaultConfig()
 config.ServiceName = "my-service"
 config.OTLPEndpoint = "collector.example.com:4317"
 config.Insecure = false // Use TLS
