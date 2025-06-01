@@ -46,44 +46,44 @@ import (
 )
 
 func main() {
-    // Create Vayu app
-    app := vayu.New()
+  // Create Vayu app
+  app := vayu.New()
 
-    // Set up OpenTelemetry integration with default options
-    options := vayuotel.DefaultSetupOptions()
-    options.App = app
-    options.Config.ServiceName = "my-service"
+  // Set up OpenTelemetry integration with default options
+  options := vayuotel.DefaultSetupOptions()
+  options.App = app
+  options.Config.ServiceName = "my-service"
 
-    // Initialize OpenTelemetry
-    otel, err := vayuotel.Setup(options)
-    if err != nil {
-        log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
-    }
+  // Initialize OpenTelemetry
+  otel, err := vayuotel.Setup(options)
+  if err != nil {
+    log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
+  }
 
-    // Ensure graceful shutdown
-    defer func() {
-        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
-        otel.Shutdown(ctx)
-    }()
+  // Ensure graceful shutdown
+  defer func() {
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    otel.Shutdown(ctx)
+  }()
 
-    // All your routes are now automatically traced!
-    app.GET("/", func(c *vayu.Context, next vayu.NextFunc) {
-        // Get a tracer with a specific name for this operation
-        tracer := otel.GetTracer("home-service")
-        
-        // Create a span using the tracer
-        ctx, span := tracer.Start(c.Request.Context(), "/home", trace.WithAttributes(
-            attribute.String("handler", "home"),
-        ))
-        defer span.End()
-        
-        c.JSONMap(vayu.StatusOK, map[string]interface{}{
-            "message": "Hello, traced world!"
-        })
+  // All your routes are now automatically traced!
+  app.GET("/", func(c *vayu.Context, next vayu.NextFunc) {
+    // Get a tracer with a specific name for this operation
+    tracer := otel.GetTracer("home-service")
+    
+    // Create a span using the tracer
+    ctx, span := tracer.Start(c.Request.Context(), "/home", trace.WithAttributes(
+        attribute.String("handler", "home"),
+    ))
+    defer span.End()
+    
+    c.JSONMap(vayu.StatusOK, map[string]interface{}{
+        "message": "Hello, traced world!"
     })
+  })
 
-    app.Listen(":8080")
+  app.Listen(":8080")
 }
 ```
 
@@ -101,29 +101,18 @@ config.UseStdout = true                     // Optional: Print traces to stdout 
 config.Insecure = true                      // Optional: Use insecure connection to collector
 ```
 
-### Middleware Configuration
-
-```go
-middlewareConfig := vayuotel.DefaultMiddlewareConfig()
-middlewareConfig.IgnoredRoutes = []string{"/health", "/metrics"} // Routes not to trace
-middlewareConfig.Filter = func(r *http.Request) bool {
-    // Custom filter to determine if request should be traced
-    return r.URL.Path != "/internal"
-}
-```
-
 ### Complete Setup Example
 
 ```go
 options := vayuotel.DefaultSetupOptions()
 options.App = app
 options.Config = config                  // From above
-options.MiddlewareConfig = middlewareConfig // From above
+
 options.EnableTracing = true             // Enable distributed tracing
 
 otel, err := vayuotel.Setup(options)
 if err != nil {
-    log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
+  log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
 }
 ```
 
@@ -136,21 +125,21 @@ Vayu-OTel leverages Vayu's type-safe context methods to provide enhanced integra
 ```go
 // The integration stores spans and trace information using Vayu's type-safe methods
 app.GET("/users/:id", func(c *vayu.Context, next vayu.NextFunc) {
-    userID := c.Param("id")
-    
-    // Get trace ID as a string (using type-safe GetString)
-    traceID := vayuotel.GetTraceID(c)
-    
-    // Log with trace context
-    log.Printf("Processing request for user %s (trace: %s)", userID, traceID)
-    
-    // Processing...
-    
-    // Return JSON with trace information included
-    vayuotel.JSONWithTracing(c, vayu.StatusOK, map[string]interface{}{
-        "id": userID,
-        "name": "User " + userID,
-    })
+  userID := c.Param("id")
+  
+  // Get trace ID as a string (using type-safe GetString)
+  traceID := vayuotel.GetTraceID(c)
+  
+  // Log with trace context
+  log.Printf("Processing request for user %s (trace: %s)", userID, traceID)
+  
+  // Processing...
+  
+  // Return JSON with trace information included
+  vayuotel.JSONWithTracing(c, vayu.StatusOK, map[string]interface{}{
+    "id": userID,
+    "name": "User " + userID,
+  })
 })
 ```
 
@@ -158,30 +147,30 @@ app.GET("/users/:id", func(c *vayu.Context, next vayu.NextFunc) {
 
 ```go
 app.GET("/users/:id", func(c *vayu.Context, next vayu.NextFunc) {
-    userID := c.Param("id")
+  userID := c.Param("id")
 
-    // Get a tracer with a specific name for user operations
-    tracer := otel.GetTracer("user-service")
+  // Get a tracer with a specific name for user operations
+  tracer := otel.GetTracer("user-service")
+  
+  // Create a span for this handler
+  ctx, span := tracer.Start(c.Request.Context(), "/users/:id", trace.WithAttributes(
+    attribute.String("user.id", userID),
+  ))
+  defer span.End()
+
+  // Create a child span for database operation
+  dbTracer := otel.GetTracer("database-service")
+  ctx, dbSpan := dbTracer.Start(ctx, "database.query", trace.WithAttributes(
+    attribute.String("db.operation", "get_user"),
+    attribute.String("db.user_id", userID),
+  ))
     
-    // Create a span for this handler
-    ctx, span := tracer.Start(c.Request.Context(), "/users/:id", trace.WithAttributes(
-        attribute.String("user.id", userID),
-    ))
-    defer span.End()
+  // Simulate database query
+  time.Sleep(50 * time.Millisecond)
+  dbSpan.End()
 
-    // Create a child span for database operation
-    dbTracer := otel.GetTracer("database-service")
-    ctx, dbSpan := dbTracer.Start(ctx, "database.query", trace.WithAttributes(
-        attribute.String("db.operation", "get_user"),
-        attribute.String("db.user_id", userID),
-    ))
-    
-    // Simulate database query
-    time.Sleep(50 * time.Millisecond)
-    dbSpan.End()
-
-    // Use type-safe JSON response
-    c.JSONMap(vayu.StatusOK, map[string]string{"id": userID})
+  // Use type-safe JSON response
+  c.JSONMap(vayu.StatusOK, map[string]string{"id": userID})
 })
 ```
 
@@ -189,13 +178,13 @@ app.GET("/users/:id", func(c *vayu.Context, next vayu.NextFunc) {
 
 ```go
 app.GET("/products", func(c *vayu.Context, next vayu.NextFunc) {
-    // Add custom attributes to current request span
-    vayuotel.AddRequestAttributes(c,
-        attribute.String("product.category", c.Query("category")),
-        attribute.Int("product.limit", 50),
-    )
+  // Add custom attributes to current request span
+  vayuotel.AddRequestAttributes(c,
+    attribute.String("product.category", c.Query("category")),
+    attribute.Int("product.limit", 50),
+  )
     
-    c.JSONString(vayu.StatusOK, `{"products":[]}`)
+  c.JSONString(vayu.StatusOK, `{"products":[]}`)
 })
 ```
 
@@ -203,15 +192,15 @@ app.GET("/products", func(c *vayu.Context, next vayu.NextFunc) {
 
 ```go
 app.GET("/error", func(c *vayu.Context, next vayu.NextFunc) {
-    err := someOperation()
-    if err != nil {
-        // Record error in span
-        vayuotel.AddError(c, err)
-        c.JSONMap(vayu.StatusInternalServerError, map[string]string{"error": err.Error()})
-        return
-    }
+  err := someOperation()
+  if err != nil {
+    // Record error in span
+    vayuotel.AddError(c, err)
+    c.JSONMap(vayu.StatusInternalServerError, map[string]string{"error": err.Error()})
+    return
+  }
     
-    c.JSONString(vayu.StatusOK, `{"status":"ok"}`)
+  c.JSONString(vayu.StatusOK, `{"status":"ok"}`)
 })
 ```
 
@@ -219,10 +208,10 @@ app.GET("/error", func(c *vayu.Context, next vayu.NextFunc) {
 
 ```go
 app.GET("/orders/:id", vayuotel.WrapHandler("get_order", func(c *vayu.Context, next vayu.NextFunc) {
-    // This handler is wrapped in a span named "get_order"
-    orderID := c.Param("id")
-    // ... handler code
-    c.JSONMap(vayu.StatusOK, map[string]string{"id": orderID})
+  // This handler is wrapped in a span named "get_order"
+  orderID := c.Param("id")
+  // ... handler code
+  c.JSONMap(vayu.StatusOK, map[string]string{"id": orderID})
 }))
 ```
 
@@ -230,18 +219,18 @@ app.GET("/orders/:id", vayuotel.WrapHandler("get_order", func(c *vayu.Context, n
 
 ```go
 app.POST("/checkout", func(c *vayu.Context, next vayu.NextFunc) {
-    // Trace a specific function and propagate any errors
-    err := vayuotel.TraceFunction(c, "payment.process", func() error {
-        // Payment processing logic that returns an error on failure
-        return processPayment(c.GetValue("payment_details"))
-    })
+  // Trace a specific function and propagate any errors
+  err := vayuotel.TraceFunction(c, "payment.process", func() error {
+    // Payment processing logic that returns an error on failure
+    return processPayment(c.GetValue("payment_details"))
+  })
     
-    if err != nil {
-        c.JSONMap(vayu.StatusBadRequest, map[string]string{"error": err.Error()})
-        return
-    }
+  if err != nil {
+    c.JSONMap(vayu.StatusBadRequest, map[string]string{"error": err.Error()})
+    return
+  }
     
-    c.JSONString(vayu.StatusOK, `{"status":"success"}`)
+  c.JSONString(vayu.StatusOK, `{"status":"success"}`)
 })
 ```
 
@@ -357,45 +346,45 @@ The integration supports creating complex span hierarchies with multiple levels 
 
 ```go
 app.GET("/span-hierarchy", func(c *vayu.Context, next vayu.NextFunc) {
-    // Get a tracer with a specific name
-    tracer := otel.GetTracer("hierarchy-demo")
+  // Get a tracer with a specific name
+  tracer := otel.GetTracer("hierarchy-demo")
 
-    // Start with the root span
-    ctx := c.Request.Context()
-    ctx, span1 := tracer.Start(ctx, "/span-hierarchy", trace.WithAttributes(
-        attribute.String("span.type", "root"),
-    ))
-    defer span1.End() // Will be closed when the HTTP handler completes
+  // Start with the root span
+  ctx := c.Request.Context()
+  ctx, span1 := tracer.Start(ctx, "/span-hierarchy", trace.WithAttributes(
+    attribute.String("span.type", "root"),
+  ))
+  defer span1.End() // Will be closed when the HTTP handler completes
 
-    // Create span2 as a child of span1
-    ctx2, span2 := tracer.Start(ctx, "/span-hierarchy/child-span2", trace.WithAttributes(
-        attribute.String("span.type", "parent"),
-    ))
-    defer span2.End()
+  // Create span2 as a child of span1
+  ctx2, span2 := tracer.Start(ctx, "/span-hierarchy/child-span2", trace.WithAttributes(
+    attribute.String("span.type", "parent"),
+  ))
+  defer span2.End()
 
-    // Create span3 as a child of span2
-    _, span3 := tracer.Start(ctx2, "/span-hierarchy/child-span3", trace.WithAttributes(
-        attribute.String("span.type", "child1"),
-    ))
-    span3.AddEvent("Processing item 1")
-    span3.End()
+  // Create span3 as a child of span2
+  _, span3 := tracer.Start(ctx2, "/span-hierarchy/child-span3", trace.WithAttributes(
+    attribute.String("span.type", "child1"),
+  ))
+  span3.AddEvent("Processing item 1")
+  span3.End()
 
-    // Create span4 as another child of span2
-    _, span4 := tracer.Start(ctx2, "/span-hierarchy/child-span4", trace.WithAttributes(
-        attribute.String("span.type", "child2"),
-    ))
-    span4.AddEvent("Processing item 2")
-    span4.End()
+  // Create span4 as another child of span2
+  _, span4 := tracer.Start(ctx2, "/span-hierarchy/child-span4", trace.WithAttributes(
+    attribute.String("span.type", "child2"),
+  ))
+  span4.AddEvent("Processing item 2")
+  span4.End()
 
-    // Create span5 as a sibling of span2 (child of span1)
-    // Use the span1 context to make it a direct child of span1
-    _, span5 := tracer.Start(ctx, "/span-hierarchy/child-span5", trace.WithAttributes(
-        attribute.String("span.type", "sibling"),
-    ))
-    span5.AddEvent("Finalizing process")
-    span5.End()
+  // Create span5 as a sibling of span2 (child of span1)
+  // Use the span1 context to make it a direct child of span1
+  _, span5 := tracer.Start(ctx, "/span-hierarchy/child-span5", trace.WithAttributes(
+    attribute.String("span.type", "sibling"),
+  ))
+  span5.AddEvent("Finalizing process")
+  span5.End()
 
-    c.JSONMap(vayu.StatusOK, map[string]string{"status": "completed"})
+  c.JSONMap(vayu.StatusOK, map[string]string{"status": "completed"})
 })
 ```
 
@@ -419,16 +408,16 @@ authTracer := otel.GetTracer("auth-service")
 
 // Use them in your handlers
 app.GET("/users/:id", func(c *vayu.Context, next vayu.NextFunc) {
-    // Start a span with the user service tracer
-    ctx, span := userTracer.Start(c.Request.Context(), "/users/:id")
-    defer span.End()
+  // Start a span with the user service tracer
+  ctx, span := userTracer.Start(c.Request.Context(), "/users/:id")
+  defer span.End()
     
-    // Use the database tracer for database operations
-    ctx, dbSpan := databaseTracer.Start(ctx, "query.user")
-    // ... database operations
-    dbSpan.End()
+  // Use the database tracer for database operations
+  ctx, dbSpan := databaseTracer.Start(ctx, "query.user")
+  // ... database operations
+  dbSpan.End()
     
-    // ... rest of handler
+  // ... rest of handler
 })
 ```
 
