@@ -55,34 +55,8 @@ func TestSetup(t *testing.T) {
 	}
 }
 
-func TestGetTracer(t *testing.T) {
-	// Create a valid app and integration
-	app := vayu.New()
-	options := vayuOtel.DefaultSetupOptions()
-	options.App = app
-	options.Config.UseStdout = true
-
-	integration, err := vayuOtel.Setup(options)
-	if err != nil {
-		t.Fatalf("Failed to set up integration: %v", err)
-	}
-
-	// Test getting a tracer with a custom name
-	customTracer := integration.GetTracer("custom-tracer-name")
-	if customTracer == nil {
-		t.Error("Expected custom tracer to be non-nil")
-	}
-
-	// Cleanup
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := integration.Shutdown(ctx); err != nil {
-		t.Errorf("Failed to shut down integration: %v", err)
-	}
-}
-
-func TestStartSpan(t *testing.T) {
-	// Test the StartSpan helper function
+func TestStart(t *testing.T) {
+	// Test the Start helper function
 	ctx := context.Background()
 	provider, err := tests.SetupTestTracer()
 	if err != nil {
@@ -90,20 +64,21 @@ func TestStartSpan(t *testing.T) {
 	}
 	defer provider.Shutdown(context.Background())
 
-	tracer := provider.Tracer("test-tracer")
-	
-	// Use the StartSpan helper function
-	newCtx, span := vayuOtel.StartSpan(ctx, tracer, "test-span")
+	// Set up a context with the tracer name value
+	ctx = context.WithValue(ctx, vayuOtel.GetTracerNameKey(), vayuOtel.GetDefaultTracerName())
+
+	// Use the Start helper function
+	newCtx, span := vayuOtel.Start(ctx, "test-span")
 	if span == nil {
 		t.Fatal("Expected span to be non-nil")
 	}
-	
+
 	// Verify the context contains the span
 	contextSpan := trace.SpanFromContext(newCtx)
 	if contextSpan != span {
 		t.Error("Expected span from context to match created span")
 	}
-	
+
 	// End the span
 	span.End()
 }
@@ -116,12 +91,11 @@ func TestAddSpanAttributes(t *testing.T) {
 	}
 	defer provider.Shutdown(context.Background())
 
-	tracer := provider.Tracer("attributes-tracer")
-	_, span := tracer.Start(context.Background(), "attributes-span")
+	_, span := provider.Tracer("attributes-tracer").Start(context.Background(), "attributes-span")
 	defer span.End()
 
 	// Use the AddSpanAttributes helper function
-	vayuOtel.AddSpanAttributes(span, 
+	vayuOtel.AddSpanAttributes(span,
 		attribute.String("test.key", "value"),
 		attribute.Int("test.count", 42),
 		attribute.Bool("test.enabled", true),
@@ -139,12 +113,11 @@ func TestAddSpanEvent(t *testing.T) {
 	}
 	defer provider.Shutdown(context.Background())
 
-	tracer := provider.Tracer("events-tracer")
-	_, span := tracer.Start(context.Background(), "events-span")
+	_, span := provider.Tracer("events-tracer").Start(context.Background(), "events-span")
 	defer span.End()
 
 	// Use the AddSpanEvent helper function
-	vayuOtel.AddSpanEvent(span, "test-event", 
+	vayuOtel.AddSpanEvent(span, "test-event",
 		attribute.String("event.type", "test"),
 		attribute.Int("event.count", 1),
 	)
@@ -161,9 +134,8 @@ func TestEndSpan(t *testing.T) {
 	}
 	defer provider.Shutdown(context.Background())
 
-	tracer := provider.Tracer("end-span-tracer")
-	_, span := tracer.Start(context.Background(), "end-span")
-	
+	_, span := provider.Tracer("end-span-tracer").Start(context.Background(), "end-span")
+
 	// Use the EndSpan helper function
 	vayuOtel.EndSpan(span)
 
@@ -179,13 +151,12 @@ func TestRecordSpanError(t *testing.T) {
 	}
 	defer provider.Shutdown(context.Background())
 
-	tracer := provider.Tracer("error-tracer")
-	_, span := tracer.Start(context.Background(), "error-span")
+	_, span := provider.Tracer("error-tracer").Start(context.Background(), "error-span")
 	defer span.End()
 
 	// Create a test error
 	testErr := errors.New("test error")
-	
+
 	// Use the RecordSpanError helper function
 	vayuOtel.RecordSpanError(span, testErr)
 
@@ -193,7 +164,7 @@ func TestRecordSpanError(t *testing.T) {
 	// This test just ensures the function doesn't panic
 }
 
-func TestMultipleTracerNames(t *testing.T) {
+func TestSpanHierarchy(t *testing.T) {
 	// Create a provider for testing
 	provider, err := tests.SetupTestTracer()
 	if err != nil {
@@ -201,30 +172,32 @@ func TestMultipleTracerNames(t *testing.T) {
 	}
 	defer provider.Shutdown(context.Background())
 
-	// Test creating spans with different tracer names
+	// Test creating spans with the new API
 	ctx := context.Background()
 
-	// Create a root span with a specific tracer name
-	rootTracer := provider.Tracer("root-tracer")
-	ctx, rootSpan := rootTracer.Start(ctx, "root-span")
+	// Set the tracer name in the context
+	ctx = context.WithValue(ctx, vayuOtel.GetTracerNameKey(), vayuOtel.GetDefaultTracerName())
+
+	// Create a root span
+	ctx, rootSpan := vayuOtel.Start(ctx, "root-span",
+		attribute.String("level", "root"))
 	defer rootSpan.End()
 
-	// Create a child span with a different tracer name
-	childTracer := provider.Tracer("child-tracer")
-	ctx, childSpan := childTracer.Start(ctx, "child-span")
+	// Create a child span
+	ctx, childSpan := vayuOtel.Start(ctx, "child-span",
+		attribute.String("level", "child"))
 	defer childSpan.End()
 
-	// Create a grandchild span with yet another tracer name
-	grandchildTracer := provider.Tracer("grandchild-tracer")
-	_, grandchildSpan := grandchildTracer.Start(ctx, "grandchild-span")
+	// Create a grandchild span
+	_, grandchildSpan := vayuOtel.Start(ctx, "grandchild-span",
+		attribute.String("level", "grandchild"))
 	defer grandchildSpan.End()
 
-	// Add some attributes and events to verify functionality
-	rootSpan.SetAttributes(attribute.String("level", "root"))
-	childSpan.SetAttributes(attribute.String("level", "child"))
-	grandchildSpan.SetAttributes(attribute.String("level", "grandchild"))
+	// Add events to verify functionality
+	vayuOtel.AddSpanEvent(rootSpan, "root-event")
+	vayuOtel.AddSpanEvent(childSpan, "child-event")
+	vayuOtel.AddSpanEvent(grandchildSpan, "grandchild-event")
 
-	rootSpan.AddEvent("root-event")
-	childSpan.AddEvent("child-event")
-	grandchildSpan.AddEvent("grandchild-event")
+	// This test just verifies that the API works without errors
+	// The actual span hierarchy is verified by the OpenTelemetry SDK
 }

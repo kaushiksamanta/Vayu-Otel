@@ -5,6 +5,7 @@ This package provides a focused OpenTelemetry tracing integration for the [Vayu 
 ## Features
 
 - **Distributed Tracing**: Automatically trace HTTP requests and create child spans for operations
+- **Automatic Middleware**: One-line setup for end-to-end request tracing
 - **Dynamic Tracer Names**: Create spans with different tracer names for better organization
 - **Type-Safe Integration**: Leverages Vayu's type-safe context methods for clean integration
 - **Minimal Configuration**: Simple API with sensible defaults
@@ -33,12 +34,17 @@ go get github.com/kaushiksamanta/vayu-otel
 
 ## Quick Start
 
+### Option 1: One-line Automatic Tracing (Recommended)
+
+The simplest way to add tracing to your Vayu application is with the `TraceAllRequests` function:
+
 ```go
 package main
 
 import (
     "context"
     "log"
+    "net/http"
     "time"
 
     "github.com/kaushiksamanta/vayu"
@@ -46,44 +52,108 @@ import (
 )
 
 func main() {
-  // Create Vayu app
-  app := vayu.New()
+    // Create Vayu app
+    app := vayu.New()
 
-  // Set up OpenTelemetry integration with default options
-  options := vayuOtel.DefaultSetupOptions()
-  options.App = app
-  options.Config.ServiceName = "my-service"
+    // One line to set up tracing with automatic middleware
+    otel, err := vayuOtel.TraceAllRequests(app, "my-service")
+    if err != nil {
+        log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
+    }
 
-  // Initialize OpenTelemetry
-  otel, err := vayuOtel.Setup(options)
-  if err != nil {
-    log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
-  }
+    // Ensure graceful shutdown
+    defer func() {
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        otel.Shutdown(ctx)
+    }()
 
-  // Ensure graceful shutdown
-  defer func() {
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    otel.Shutdown(ctx)
-  }()
-
-  // All your routes are now automatically traced!
-  app.GET("/", func(c *vayu.Context, next vayu.NextFunc) {
-    // Get a tracer with a specific name for this operation
-    tracer := otel.GetTracer("home-service")
-    
-    // Create a span using the tracer
-    ctx, span := tracer.Start(c.Request.Context(), "/home", trace.WithAttributes(
-        attribute.String("handler", "home"),
-    ))
-    defer span.End()
-    
-    c.JSONMap(vayu.StatusOK, map[string]interface{}{
-        "message": "Hello, traced world!"
+    // Define your routes - they will be automatically traced!
+    app.GET("/", func(c *vayu.Context, next vayu.NextFunc) {
+        // The request is already being traced by the middleware
+        // You can access the current context which contains the span
+        ctx := c.Request.Context()
+        
+        // Your handler logic here
+        c.JSON(http.StatusOK, map[string]string{
+            "message": "Hello, traced world!"
+        })
     })
-  })
 
-  app.Listen(":8080")
+    app.Listen(":8080")
+}
+```
+
+### Option 2: Manual Setup with More Control
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "net/http"
+    "time"
+
+    "github.com/kaushiksamanta/vayu"
+    vayuOtel "github.com/kaushiksamanta/vayu-otel"
+    "go.opentelemetry.io/otel/attribute"
+    "go.opentelemetry.io/otel/trace"
+)
+
+func main() {
+    // Create Vayu app
+    app := vayu.New()
+
+    // Set up OpenTelemetry integration with default options
+    options := vayuOtel.DefaultSetupOptions()
+    options.App = app
+    options.Config.ServiceName = "my-service"
+
+    // Initialize OpenTelemetry
+    otel, err := vayuOtel.Setup(options)
+    if err != nil {
+        log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
+    }
+
+    // Ensure graceful shutdown
+    defer func() {
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        otel.Shutdown(ctx)
+    }()
+
+    // Add the tracing middleware with custom options
+    app.Use(otel.Middleware(vayuOtel.MiddlewareOptions{
+        TracerName: "http-requests",
+        SpanNameFormatter: func(c *vayu.Context) string {
+            return "Custom: " + c.Request.Method + " " + c.Request.URL.Path
+        },
+        CustomAttributes: func(c *vayu.Context) []attribute.KeyValue {
+            return []attribute.KeyValue{
+                attribute.String("custom.attribute", "value"),
+                attribute.String("request.id", "12345"),
+            }
+        },
+    }))
+
+    // Define your routes
+    app.GET("/", func(c *vayu.Context, next vayu.NextFunc) {
+        // Get a tracer with a specific name for this operation
+        tracer := otel.GetTracer("home-service")
+        
+        // Create a child span using the tracer
+        ctx, span := tracer.Start(c.Request.Context(), "/home", trace.WithAttributes(
+            attribute.String("handler", "home"),
+        ))
+        defer span.End()
+        
+        c.JSON(http.StatusOK, map[string]string{
+            "message": "Hello, traced world!"
+        })
+    })
+
+    app.Listen(":8080")
 }
 ```
 

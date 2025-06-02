@@ -5,7 +5,6 @@ import (
 	"context"
 
 	"github.com/kaushiksamanta/vayu"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -61,24 +60,6 @@ func (i *Integration) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// GetTracer returns a tracer with the specified name
-func (i *Integration) GetTracer(tracerName string) trace.Tracer {
-	if i.provider == nil || i.provider.TracerProvider == nil {
-		return NewNoopTracer()
-	}
-	return i.provider.TracerProvider.Tracer(tracerName)
-}
-
-// NewNoopTracer returns a no-op tracer for when tracing is disabled
-func NewNoopTracer() trace.Tracer {
-	return otel.GetTracerProvider().Tracer("noop")
-}
-
-// StartSpan starts a new span with the given name and options
-func StartSpan(ctx context.Context, tracer trace.Tracer, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return tracer.Start(ctx, name, opts...)
-}
-
 // AddSpanAttributes adds attributes to the given span
 func AddSpanAttributes(span trace.Span, attributes ...attribute.KeyValue) {
 	span.SetAttributes(attributes...)
@@ -98,4 +79,29 @@ func EndSpan(span trace.Span) {
 func RecordSpanError(span trace.Span, err error) {
 	span.RecordError(err)
 	span.SetStatus(codes.Error, err.Error())
+}
+
+// Start creates a span from the context
+func Start(ctx context.Context, name string, attributes ...attribute.KeyValue) (context.Context, trace.Span) {
+	// Get the current span from the context
+	currentSpan := trace.SpanFromContext(ctx)
+
+	// Get the tracer provider from the current span
+	tracerProvider := currentSpan.TracerProvider()
+
+	// Always get the tracer name from the context
+	tracerName := ctx.Value(tracerNameKey).(string)
+
+	// Get the tracer with the appropriate name
+	tracer := tracerProvider.Tracer(tracerName)
+
+	// Create a new child span
+	ctx, span := tracer.Start(ctx, name)
+
+	// Add attributes if provided
+	if len(attributes) > 0 {
+		span.SetAttributes(attributes...)
+	}
+
+	return ctx, span
 }
