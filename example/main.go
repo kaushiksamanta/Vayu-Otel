@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/kaushiksamanta/vayu"
 	vayuOtel "github.com/kaushiksamanta/vayu-otel"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 func main() {
@@ -59,10 +59,12 @@ func main() {
 
 		// Create a child span for database operation directly from the context
 		// This is simpler in auto-tracing scenarios - no need to get a tracer explicitly
-		_, dbSpan := vayuOtel.Start(ctx, "database.get_user",
-			attribute.String("db.operation", "get_user"),
-			attribute.String("db.user_id", userID),
-		)
+		dbSpan := vayuOtel.Start(ctx, "database.get_user")
+		// Add attributes using the map style API
+		dbSpan.AddAttributes(map[string]interface{}{
+			"db.operation": "get_user",
+			"db.user_id":   userID,
+		})
 		defer dbSpan.End()
 
 		// Simulate database query
@@ -81,28 +83,39 @@ func main() {
 		ctx := c.Request.Context()
 
 		// Create span2 as a child of span1
-		ctx2, span2 := vayuOtel.Start(ctx, "/span-hierarchy/child-span2")
-		span2.SetAttributes(attribute.String("span.type", "parent"))
+		span2 := vayuOtel.Start(ctx, "/span-hierarchy/child-span2")
+		span2.AddAttributes(map[string]interface{}{
+			"span.type": "parent",
+		})
 		defer span2.End()
 
+		// Get the context from span2
+		ctx2 := span2.Context()
+
 		// Create span3 as a child of span2
-		_, span3 := vayuOtel.Start(ctx2, "/span-hierarchy/child-span3")
-		span3.SetAttributes(attribute.String("span.type", "child1"))
+		span3 := vayuOtel.Start(ctx2, "/span-hierarchy/child-span3")
+		span3.AddAttributes(map[string]interface{}{
+			"span.type": "child1",
+		})
 		span3.AddEvent("Processing item 1")
 		time.Sleep(10 * time.Millisecond) // Simulate work
 		span3.End()
 
 		// Create span4 as another child of span2
-		_, span4 := vayuOtel.Start(ctx2, "/span-hierarchy/child-span4")
-		span4.SetAttributes(attribute.String("span.type", "child2"))
+		span4 := vayuOtel.Start(ctx2, "/span-hierarchy/child-span4")
+		span4.AddAttributes(map[string]interface{}{
+			"span.type": "child2",
+		})
 		span4.AddEvent("Processing item 2")
 		time.Sleep(15 * time.Millisecond) // Simulate work
 		span4.End()
 
 		// Create span5 as a sibling of span2 (child of span1)
 		// Use the span1 context to make it a direct child of span1
-		_, span5 := vayuOtel.Start(ctx, "/span-hierarchy/child-span5")
-		span5.SetAttributes(attribute.String("span.type", "sibling"))
+		span5 := vayuOtel.Start(ctx, "/span-hierarchy/child-span5")
+		span5.AddAttributes(map[string]interface{}{
+			"span.type": "sibling",
+		})
 		span5.AddEvent("Finalizing process")
 		time.Sleep(5 * time.Millisecond) // Simulate work
 		span5.End()
@@ -121,11 +134,26 @@ func main() {
 
 	// Route that demonstrates error handling with auto-tracing
 	app.GET("/error", func(c *vayu.Context, next vayu.NextFunc) {
+		ctx := c.Request.Context()
+
+		// Create a span for the operation that will have an error
+		errorSpan := vayuOtel.Start(ctx, "/error-example/operation")
+		// Add attributes using the map style API
+		errorSpan.AddAttributes(map[string]interface{}{
+			"operation.type": "error-demo",
+		})
+		defer errorSpan.End()
+
 		// Simulate an error
-		// The middleware will automatically mark the span as error
+		err := errors.New("something went wrong")
+
+		// Record the error on the span using the fluent API
+		errorSpan.RecordError(err)
+
+		// The middleware will also automatically mark the parent span as error
 		// based on the HTTP status code
 		c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Something went wrong",
+			"error": err.Error(),
 		})
 	})
 

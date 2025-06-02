@@ -1,4 +1,3 @@
-// Package vayuotel provides OpenTelemetry integration for the Vayu web framework.
 package vayuotel
 
 import (

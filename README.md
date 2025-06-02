@@ -6,11 +6,12 @@ This package provides a focused OpenTelemetry tracing integration for the [Vayu 
 
 - **Distributed Tracing**: Automatically trace HTTP requests and create child spans for operations
 - **Automatic Middleware**: One-line setup for end-to-end request tracing
-- **Dynamic Tracer Names**: Create spans with different tracer names for better organization
+- **Zero OpenTelemetry Imports**: End users don't need to import any OpenTelemetry packages directly
+- **Fluent API**: Chainable methods for span operations (attributes, events, errors)
 - **Type-Safe Integration**: Leverages Vayu's type-safe context methods for clean integration
 - **Minimal Configuration**: Simple API with sensible defaults
 - **Flexible Options**: Fine-grained control over what gets traced
-- **Standalone Package**: Keeps the core Vayu framework lean while providing full observability
+- **Modular Code Structure**: Well-organized code split into focused files
 - **Compatible with all OpenTelemetry backends**: Works with Jaeger, Zipkin, and any OpenTelemetry collector
 
 ## Screenshots
@@ -34,127 +35,105 @@ go get github.com/kaushiksamanta/vayu-otel
 
 ## Quick Start
 
-### Option 1: One-line Automatic Tracing (Recommended)
+### Example Usage
 
-The simplest way to add tracing to your Vayu application is with the `TraceAllRequests` function:
-
-```go
-package main
-
-import (
-    "context"
-    "log"
-    "net/http"
-    "time"
-
-    "github.com/kaushiksamanta/vayu"
-    vayuOtel "github.com/kaushiksamanta/vayu-otel"
-)
-
-func main() {
-    // Create Vayu app
-    app := vayu.New()
-
-    // One line to set up tracing with automatic middleware
-    otel, err := vayuOtel.TraceAllRequests(app, "my-service")
-    if err != nil {
-        log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
-    }
-
-    // Ensure graceful shutdown
-    defer func() {
-        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
-        otel.Shutdown(ctx)
-    }()
-
-    // Define your routes - they will be automatically traced!
-    app.GET("/", func(c *vayu.Context, next vayu.NextFunc) {
-        // The request is already being traced by the middleware
-        // You can access the current context which contains the span
-        ctx := c.Request.Context()
-        
-        // Your handler logic here
-        c.JSON(http.StatusOK, map[string]string{
-            "message": "Hello, traced world!"
-        })
-    })
-
-    app.Listen(":8080")
-}
-```
-
-### Option 2: Manual Setup with More Control
+The following examples are taken from the included example application in `example/main.go`:
 
 ```go
 package main
 
 import (
-    "context"
-    "log"
-    "net/http"
-    "time"
+	"context"
+	"log"
+	"net/http"
+	"time"
 
-    "github.com/kaushiksamanta/vayu"
-    vayuOtel "github.com/kaushiksamanta/vayu-otel"
-    "go.opentelemetry.io/otel/attribute"
-    "go.opentelemetry.io/otel/trace"
+	"github.com/kaushiksamanta/vayu"
+	vayuOtel "github.com/kaushiksamanta/vayu-otel"
 )
 
 func main() {
-    // Create Vayu app
-    app := vayu.New()
+	// Create a new Vayu app
+	app := vayu.New()
 
-    // Set up OpenTelemetry integration with default options
-    options := vayuOtel.DefaultSetupOptions()
-    options.App = app
-    options.Config.ServiceName = "my-service"
+	// Set up OpenTelemetry with automatic tracing in one line
+	// This automatically adds the tracing middleware to the app
+	integration, err := vayuOtel.TraceAllRequests(app, "auto-trace-demo")
+	if err != nil {
+		log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
+	}
 
-    // Initialize OpenTelemetry
-    otel, err := vayuOtel.Setup(options)
-    if err != nil {
-        log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
-    }
+	// Ensure graceful shutdown
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := integration.Shutdown(ctx); err != nil {
+			log.Printf("Error shutting down OpenTelemetry: %v", err)
+		}
+	}()
 
-    // Ensure graceful shutdown
-    defer func() {
-        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
-        otel.Shutdown(ctx)
-    }()
+	// Add other middleware if needed
+	app.Use(vayu.Logger())
+	app.Use(vayu.Recovery())
 
-    // Add the tracing middleware with custom options
-    app.Use(otel.Middleware(vayuOtel.MiddlewareOptions{
-        TracerName: "http-requests",
-        SpanNameFormatter: func(c *vayu.Context) string {
-            return "Custom: " + c.Request.Method + " " + c.Request.URL.Path
-        },
-        CustomAttributes: func(c *vayu.Context) []attribute.KeyValue {
-            return []attribute.KeyValue{
-                attribute.String("custom.attribute", "value"),
-                attribute.String("request.id", "12345"),
-            }
-        },
-    }))
+	// Simple home route - automatically traced by the middleware
+	app.GET("/", func(c *vayu.Context, next vayu.NextFunc) {
+		// The request is already being traced by the middleware
+		// No need to create a span manually
+		c.JSON(http.StatusOK, map[string]string{
+			"message": "Welcome to auto-traced Vayu!",
+		})
+	})
 
-    // Define your routes
-    app.GET("/", func(c *vayu.Context, next vayu.NextFunc) {
-        // Get a tracer with a specific name for this operation
-        tracer := otel.GetTracer("home-service")
-        
-        // Create a child span using the tracer
-        ctx, span := tracer.Start(c.Request.Context(), "/home", trace.WithAttributes(
-            attribute.String("handler", "home"),
-        ))
-        defer span.End()
-        
-        c.JSON(http.StatusOK, map[string]string{
-            "message": "Hello, traced world!"
-        })
-    })
+	// Route with child span for more detailed tracing
+	app.GET("/users/:id", func(c *vayu.Context, next vayu.NextFunc) {
+		// Get user ID from route params
+		userID := c.Params["id"]
+		if userID == "" {
+			userID = "default"
+		}
 
-    app.Listen(":8080")
-}
+		// The parent span is already created by the middleware
+		// We can create a child span for the database operation
+		// Get the current context which contains the parent span
+		ctx := c.Request.Context()
+
+		// Create a child span for database operation directly from the context
+		// This is simpler in auto-tracing scenarios - no need to get a tracer explicitly
+		dbSpan := vayuOtel.Start(ctx, "database.get_user",
+			vayuOtel.WithStringAttribute("db.operation", "get_user"),
+			vayuOtel.WithStringAttribute("db.user_id", userID),
+		)
+		defer dbSpan.End()
+
+		// Simulate database query
+		time.Sleep(50 * time.Millisecond)
+
+		// Return the response
+		c.JSON(http.StatusOK, map[string]string{
+			"id":    userID,
+			"name":  "User " + userID,
+			"email": "user" + userID + "@example.com",
+		})
+	})
+
+	app.Listen(":8080")
+}```
+
+### Error Handling Example
+
+The middleware automatically marks spans as errors based on HTTP status codes. Here's an example from the example application:
+
+```go
+// Route that demonstrates error handling with auto-tracing
+app.GET("/error", func(c *vayu.Context, next vayu.NextFunc) {
+	// Simulate an error
+	// The middleware will automatically mark the span as error
+	// based on the HTTP status code
+	c.JSON(http.StatusInternalServerError, map[string]string{
+		"error": "Something went wrong",
+	})
+})
 ```
 
 ## Configuration Options
@@ -313,45 +292,53 @@ The integration supports creating complex span hierarchies with multiple levels 
 
 ```go
 app.GET("/span-hierarchy", func(c *vayu.Context, next vayu.NextFunc) {
-  // Get a tracer with a specific name
-  tracer := otel.GetTracer("hierarchy-demo")
-
-  // Start with the root span
   ctx := c.Request.Context()
-  ctx, span1 := tracer.Start(ctx, "/span-hierarchy", trace.WithAttributes(
-    attribute.String("span.type", "root"),
-  ))
-  defer span1.End() // Will be closed when the HTTP handler completes
 
   // Create span2 as a child of span1
-  ctx2, span2 := tracer.Start(ctx, "/span-hierarchy/child-span2", trace.WithAttributes(
-    attribute.String("span.type", "parent"),
-  ))
+  span2 := vayuOtel.Start(ctx, "/span-hierarchy/child-span2")
+  span2.AddAttributes(map[string]interface{}{
+    "span.type": "parent",
+  })
   defer span2.End()
 
   // Create span3 as a child of span2
-  _, span3 := tracer.Start(ctx2, "/span-hierarchy/child-span3", trace.WithAttributes(
-    attribute.String("span.type", "child1"),
-  ))
+  span3 := vayuOtel.Start(span2.Context(), "/span-hierarchy/child-span3")
+  span3.AddAttributes(map[string]interface{}{
+    "span.type": "child1",
+  })
   span3.AddEvent("Processing item 1")
+  time.Sleep(10 * time.Millisecond) // Simulate work
   span3.End()
 
   // Create span4 as another child of span2
-  _, span4 := tracer.Start(ctx2, "/span-hierarchy/child-span4", trace.WithAttributes(
-    attribute.String("span.type", "child2"),
-  ))
+  span4 := vayuOtel.Start(span2.Context(), "/span-hierarchy/child-span4")
+  span4.AddAttributes(map[string]interface{}{
+    "span.type": "child2",
+  })
   span4.AddEvent("Processing item 2")
+  time.Sleep(15 * time.Millisecond) // Simulate work
   span4.End()
 
   // Create span5 as a sibling of span2 (child of span1)
   // Use the span1 context to make it a direct child of span1
-  _, span5 := tracer.Start(ctx, "/span-hierarchy/child-span5", trace.WithAttributes(
-    attribute.String("span.type", "sibling"),
-  ))
+  span5 := vayuOtel.Start(ctx, "/span-hierarchy/child-span5")
+  span5.AddAttributes(map[string]interface{}{
+    "span.type": "sibling",
+  })
   span5.AddEvent("Finalizing process")
+  time.Sleep(5 * time.Millisecond) // Simulate work
   span5.End()
 
-  c.JSONMap(vayu.StatusOK, map[string]string{"status": "completed"})
+  c.JSON(http.StatusOK, map[string]interface{}{
+    "message": "Created complex span hierarchy",
+    "structure": []string{
+      "span1 (root)",
+      "  └── span2 (parent)",
+      "       ├── span3 (child of span2)",
+      "       └── span4 (child of span2)",
+      "  └── span5 (sibling of span2, child of span1)",
+    },
+  })
 })
 ```
 
@@ -363,30 +350,40 @@ This creates a span hierarchy that can be visualized in Jaeger UI as follows:
     - `/span-hierarchy/child-span4`
   - `/span-hierarchy/child-span5`
 
-### Using Multiple Tracer Names
 
-You can organize your spans by using different tracer names for different components of your application:
 
-```go
-// Get tracers for different services
-userTracer := otel.GetTracer("user-service")
-databaseTracer := otel.GetTracer("database-service")
-authTracer := otel.GetTracer("auth-service")
+## Key Benefits of the Fluent API
 
-// Use them in your handlers
-app.GET("/users/:id", func(c *vayu.Context, next vayu.NextFunc) {
-  // Start a span with the user service tracer
-  ctx, span := userTracer.Start(c.Request.Context(), "/users/:id")
-  defer span.End()
-    
-  // Use the database tracer for database operations
-  ctx, dbSpan := databaseTracer.Start(ctx, "query.user")
-  // ... database operations
-  dbSpan.End()
-    
-  // ... rest of handler
-})
-```
+The vayu-otel library has been designed with simplicity and usability in mind. Here are the key benefits of the fluent API:
+
+1. **Zero OpenTelemetry Imports**: End users don't need to import any OpenTelemetry packages directly in their application code. All OpenTelemetry complexity is abstracted away.
+
+2. **Fluent, Chainable Methods**: The `Span` wrapper provides chainable methods for adding attributes, events, and recording errors, enabling a more idiomatic and expressive coding style.
+
+3. **Context Management**: The `Span` wrapper maintains its own context, making it easier to create child spans without manually tracking context variables.
+
+4. **Consistent Tracer Naming**: The middleware uses a consistent tracer name (`vayu-http`) for all spans, which simplifies span organization and visualization.
+
+5. **Type-Safe Attribute Helpers**: Helper functions like `WithStringAttribute`, `WithIntAttribute`, etc. provide type-safe ways to create span attributes.
+
+6. **Reduced Boilerplate**: Common operations like adding attributes, recording events, and handling errors are simplified with fluent methods on the `Span` wrapper.
+
+## Code Structure
+
+The codebase has been reorganized into focused files for better maintainability:
+
+- **span.go**: Contains the `Span` wrapper struct and its methods for adding attributes, events, recording errors, and ending spans.
+- **attributes.go**: Contains attribute helper functions and `SpanOption` implementations.
+- **integration.go**: Contains the `Integration` struct and setup functions.
+- **middleware.go**: Contains the HTTP middleware for automatic tracing.
+- **middleware_options.go**: Contains middleware configuration options.
+- **context.go**: Contains context key definitions and helper functions.
+- **config.go**: Contains configuration types and provider implementation.
+- **errors.go**: Contains error definitions.
+- **http_helpers.go**: Contains HTTP-related helper functions.
+- **otel.go**: Main entry point that documents the package structure.
+
+This modular structure makes the codebase easier to navigate, understand, and maintain.
 
 ## Contributing
 
