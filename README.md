@@ -177,7 +177,10 @@ config.Insecure = true
 
 ```go
 config := vayuOtel.DefaultConfig()
-}
+config.ServiceName = "my-service"
+config.OTLPEndpoint = "custom-collector:4317" // Custom OTLP endpoint
+config.Insecure = true
+```
 
 ## Development & Testing
 
