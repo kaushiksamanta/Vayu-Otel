@@ -15,9 +15,12 @@ func main() {
 	// Create a new Vayu app
 	app := vayu.New()
 
-	// Set up OpenTelemetry with automatic tracing in one line
+	// Set up OpenTelemetry with automatic tracing
 	// This automatically adds the tracing middleware to the app
-	integration, err := vayuOtel.TraceAllRequests(app, "auto-trace-demo")
+	config := vayuOtel.DefaultConfig()
+
+	config.ServiceName = "auto-trace-demo"
+	integration, err := vayuOtel.TraceAllRequests(app, config)
 	if err != nil {
 		log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
 	}
@@ -31,7 +34,6 @@ func main() {
 		}
 	}()
 
-	// Add other middleware if needed
 	app.Use(vayu.Logger())
 	app.Use(vayu.Recovery())
 

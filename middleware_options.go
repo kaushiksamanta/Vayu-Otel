@@ -29,11 +29,7 @@ func DefaultMiddlewareOptions() MiddlewareOptions {
 }
 
 // TraceAllRequests is a convenience function that sets up the integration and returns a middleware
-func TraceAllRequests(app *vayu.App, serviceName string) (*Integration, error) {
-	// Create default configuration
-	config := DefaultConfig()
-	config.ServiceName = serviceName
-
+func TraceAllRequests(app *vayu.App, config Config) (*Integration, error) {
 	// Set up integration options
 	options := DefaultSetupOptions()
 	options.App = app

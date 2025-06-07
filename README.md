@@ -165,15 +165,6 @@ config.OTLPEndpoint = "jaeger:4317" // Jaeger OTLP endpoint
 config.Insecure = true
 ```
 
-### Zipkin
-
-```go
-config := vayuOtel.DefaultConfig()
-config.ServiceName = "my-service"
-config.OTLPEndpoint = "zipkin:4317" // Zipkin OTLP endpoint
-config.Insecure = true
-```
-
 ### Custom OTLP Endpoint
 
 ```go
@@ -261,20 +252,6 @@ span := vayuOtel.Start(ctx, "database-query",
 )
 defer span.End()
 ```
-
-## Code Structure
-
-The codebase has been organized into focused files for better maintainability:
-
-- **span.go**: Span wrapper with fluent methods
-- **attributes.go**: Attribute helpers and SpanOption implementations
-- **integration.go**: Integration struct and setup functions
-- **middleware.go**: HTTP middleware implementation
-- **middleware_options.go**: Middleware configuration options
-- **context.go**: Context key definitions
-- **config.go**: Configuration and provider implementation
-- **errors.go**: Error definitions
-- **http_helpers.go**: HTTP helper functions
 
 ## License
 
